@@ -22,6 +22,7 @@ serde = { version = "1.0.197", features = ["alloc", "derive", "rc"] }
 serde_json = "1.0.115"
 serde_path_to_error = "0.1.16"
 serde_yaml = "0.9.34"
+sonic-rs = "0.3.4"
 tokio = { version = "1.37.0", features = ["full"] }
 tracing = "0.1.40"
 v8 = "0.89.0"

@@ -45,6 +45,7 @@ pub async fn ingest(
             let root = root.clone();
             let metadata = metadata.clone();
             let cachedir = PathBuf::from(".cache");
+            std::fs::create_dir_all(&cachedir);
             let regex = opts.regex.as_ref().map(|x| Regex::from_str(x).unwrap());
             b.bm("start");
             async move {
@@ -69,12 +70,10 @@ pub async fn ingest(
                 let inner: Vec<IObject> =
                     if let Ok(cached) = tokio::fs::read(cachedir.join(&hash)).await {
                         let cached = unsafe { String::from_utf8_unchecked(cached) };
-                        let cached = cached
-                            .lines()
-                            .par_bridge()
-                            .map(|line| serde_json::from_str(line).unwrap())
-                            .collect();
-                        cached
+                        b.bm("read");
+                        let r = serde_json::from_str(&cached).unwrap();
+                        b.bm("deserialize");
+                        r
                     } else {
                         let file = match md {
                             // TODO: Handle non edifact
@@ -96,12 +95,10 @@ pub async fn ingest(
 
                         let res1 = res.clone();
                         tokio::spawn(async move {
-                            let cache = res1
-                                .into_iter()
-                                .map(|x| serde_json::to_string(&x).unwrap())
-                                .join("\n");
+                            let cache = serde_json::to_vec(&res1).unwrap();
                             tokio::fs::write(cachedir.join(hash), cache).await.unwrap();
-                        });
+                        })
+                        .await;
 
                         res
                     };
