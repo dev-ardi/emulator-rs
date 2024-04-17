@@ -1,0 +1,53 @@
+bmpVersion: !!str 1.5.0
+flow: test
+modules:
+  - name: load
+    type: MessageIngestion
+    schema:
+      format: Edifact
+      file: PPPBCS.xml
+  - name: routing
+    type: Logic
+    routes:
+      - flow
+    rules:
+      - routing.js
+  - name: splitting
+    input: routing.flow
+    type: Splitting
+    arrayPath: people
+    allowEmpty: true
+  - name: event-processing
+    input: splitting.output
+    type: Logic
+    rules:
+      - event-processing.js
+  - name: lookup
+    input: splitting.output
+    type: Lookup
+    table: countriesTable
+    expectUniqueMatch: true
+    join:
+      - input: country
+        table: countryName
+    lookup:
+      - countryCode
+  - name: aggregation
+    type: Aggregation
+    input: event-processing.output
+    key:
+      - billingmediation.computed.country
+      - billingmediation.computed.city
+    sums:
+      messageCount: 1
+      totalCredits: billingmediation.computed.personCredits
+  - name: reporting
+    type: Reporting
+    input: aggregation.output
+    scheduling:
+      frequency: monthly
+    format: CSV
+    fields:
+      - "Sold-To": billingmediation.computed.sapCustomerName
+      - "Product Code": billingmediation.computed.sapProductCode
+      - "Billing Service Date": billingmediation.computed.billingServiceDate

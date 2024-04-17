@@ -1,0 +1,9 @@
+{
+  "playbook_file_path": "../flows/src/ettl-ancillary/playbook/ettl-playbook.yml",
+  "input":[{
+    "path": "../flows/src/ettl-ancillary/tests/bmp-emulator/par-run/PPT.EOT.D240401.T000922",
+    "metadata": {"process_date": "2027-03-05T12:00:00Z"}
+  }],
+  "show_bench": true,
+  "ingestion_opts": {}
+}

@@ -1,0 +1,1013 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "definitions": {
+    "aggregationKey": {
+      "items": {
+        "allOf": [
+          {
+            "pattern": "^(?!billingmediation$).*",
+            "type": "string"
+          },
+          {
+            "pattern": "^(?!billingmediation\\.aggregation)",
+            "type": "string"
+          },
+          {
+            "$ref": "#/definitions/dataPath"
+          }
+        ]
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "csvSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "const": "CSV"
+        },
+        "mapping": {
+          "items": {
+            "additionalItems": {
+              "$ref": "#/definitions/dataType"
+            },
+            "items": [
+              {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/definitions/dataPath"
+                  }
+                ]
+              }
+            ],
+            "maxItems": 3,
+            "minItems": 2,
+            "type": "array"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "separator": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "format",
+        "separator",
+        "mapping"
+      ],
+      "type": "object"
+    },
+    "dataPath": {
+      "pattern": "^[^/\\. ]+(.[^/\\. ]+)*$",
+      "type": "string"
+    },
+    "dataType": {
+      "pattern": "^(string|number|boolean)$",
+      "type": "string"
+    },
+    "dateOrDatetime": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "format": "date-time",
+          "type": "string"
+        }
+      ]
+    },
+    "datePattern": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "edifactSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "pattern": "^.+\\.xml$",
+          "type": "string"
+        },
+        "format": {
+          "const": "Edifact"
+        }
+      },
+      "required": [
+        "format",
+        "file"
+      ],
+      "type": "object"
+    },
+    "eventTimeField": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "$ref": "#/definitions/datePattern"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "format"
+      ],
+      "type": "object"
+    },
+    "eventTimeFilter": {
+      "additionalProperties": false,
+      "else": {
+        "properties": {
+          "format": {
+            "$ref": "#/definitions/datePattern"
+          },
+          "path": {
+            "$ref": "#/definitions/dataPath"
+          }
+        },
+        "required": [
+          "path",
+          "format"
+        ]
+      },
+      "if": {
+        "properties": {
+          "path": {
+            "const": ""
+          }
+        }
+      },
+      "properties": {
+        "end": {
+          "$ref": "#/definitions/dateOrDatetime"
+        },
+        "format": true,
+        "path": true,
+        "start": {
+          "$ref": "#/definitions/dateOrDatetime"
+        }
+      },
+      "then": {
+        "properties": {
+          "format": false,
+          "path": {
+            "maxLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "type": "object"
+    },
+    "fieldSelection": {
+      "items": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "add": {
+                "$ref": "#/definitions/dataPath",
+                "type": "string"
+              }
+            },
+            "required": [
+              "add"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "del": {
+                "$ref": "#/definitions/dataPath",
+                "type": "string"
+              }
+            },
+            "required": [
+              "del"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "fileSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "header": {
+          "type": "string"
+        },
+        "records": {
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "format": {
+                    "const": "CSV"
+                  }
+                }
+              },
+              "then": {
+                "$ref": "#/definitions/csvSchema"
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "format": {
+                    "const": "Fixed"
+                  }
+                }
+              },
+              "then": {
+                "$ref": "#/definitions/fixedSchema"
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "format": {
+                    "const": "Edifact"
+                  }
+                }
+              },
+              "then": {
+                "$ref": "#/definitions/edifactSchema"
+              }
+            }
+          ],
+          "properties": {
+            "format": {
+              "pattern": "^(CSV|Fixed|Edifact)$",
+              "type": "string"
+            }
+          }
+        },
+        "trailer": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "records"
+      ],
+      "type": "object"
+    },
+    "fileServerInput": {
+      "additionalProperties": false,
+      "properties": {
+        "deleteFilesAfter": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "pattern": "^[0-9]+[dwm]$",
+              "type": "string"
+            },
+            {
+              "const": 0
+            }
+          ]
+        },
+        "directories": {
+          "type": "string"
+        },
+        "fileServer": {
+          "const": "FCR"
+        },
+        "files": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "directories",
+        "files"
+      ],
+      "type": "object"
+    },
+    "fixedSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "const": "Fixed"
+        },
+        "mapping": {
+          "items": {
+            "additionalItems": {
+              "$ref": "#/definitions/dataType"
+            },
+            "items": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/definitions/dataPath"
+                  }
+                ]
+              }
+            ],
+            "maxItems": 4,
+            "minItems": 3,
+            "type": "array"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "format",
+        "mapping"
+      ],
+      "type": "object"
+    },
+    "inputTopic": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "event": {
+              "pattern": "^(?<event>[a-z0-9-]{1,25})$",
+              "type": "string"
+            },
+            "producer": {
+              "pattern": "^(?<producer>[a-z0-9-]{1,10})$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "producer",
+            "event"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/definitions/moduleStream"
+        },
+        {
+          "$ref": "#/definitions/moduleName"
+        }
+      ]
+    },
+    "join": {
+      "items": {
+        "properties": {
+          "input": {
+            "$ref": "#/definitions/dataPath"
+          },
+          "table": {
+            "$ref": "#/definitions/dataPath"
+          }
+        },
+        "required": [
+          "input",
+          "table"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "jsonSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "pattern": "^.+\\.(json|yml|yaml)$",
+          "type": "string"
+        },
+        "format": {
+          "const": "JSON"
+        }
+      },
+      "required": [
+        "format",
+        "file"
+      ],
+      "type": "object"
+    },
+    "lookup": {
+      "items": {
+        "$ref": "#/definitions/dataPath"
+      },
+      "type": "array"
+    },
+    "messageSchema": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "JSON"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/jsonSchema"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "Edifact"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/definitions/edifactSchema"
+          }
+        }
+      ],
+      "properties": {
+        "format": {
+          "pattern": "^(JSON|Edifact)$",
+          "type": "string"
+        }
+      }
+    },
+    "moduleName": {
+      "pattern": "^(?<module>[a-z0-9-]{1,40})$",
+      "type": "string"
+    },
+    "moduleStream": {
+      "pattern": "^(?<module>[a-z0-9-]{1,40})\\.(?<stream>[a-z0-9-]{1,30})$",
+      "type": "string"
+    },
+    "objectStoreInput": {
+      "additionalProperties": false,
+      "properties": {
+        "buckets": {
+          "type": "string"
+        },
+        "objectKeyPrefix": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "buckets"
+      ],
+      "type": "object"
+    },
+    "period": {
+      "pattern": "^([-+]?)P(?:([-+]?[0-9]+)D)?(T(?:([-+]?[0-9]+)H)?(?:([-+]?[0-9]+)M)?(?:([-+]?[0-9]+)(?:[.,]([0-9]{0,9}))?S)?)?$",
+      "type": "string"
+    },
+    "sums": {
+      "additionalProperties": false,
+      "minProperties": 1,
+      "patternProperties": {
+        "^[^/\\. ]+(.[^/\\. ]+)*$": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/dataPath"
+            },
+            {
+              "const": 1,
+              "type": "integer"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "properties": {
+    "bmpVersion": {
+      "pattern": "^(?<major>[0-9]+)(\\.(?<minor>[0-9]+)(\\.(?<patch>[0-9]+))?)?([-\\+](?<tag>[a-z0-9-]+))?$",
+      "type": "string"
+    },
+    "flow": {
+      "pattern": "^(?<flow>[a-z][-a-z0-9]{1,29})$(?<!-)",
+      "type": "string"
+    },
+    "hasPII": {
+      "default": false,
+      "type": "boolean"
+    },
+    "modules": {
+      "items": {
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "FileIngestion"
+                }
+              }
+            },
+            "then": {
+              "additionalProperties": false,
+              "properties": {
+                "eventTime": {
+                  "$ref": "#/definitions/eventTimeFilter"
+                },
+                "input": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/definitions/fileServerInput"
+                    },
+                    {
+                      "$ref": "#/definitions/objectStoreInput"
+                    }
+                  ]
+                },
+                "name": {
+                  "$ref": "#/definitions/moduleName"
+                },
+                "schema": {
+                  "$ref": "#/definitions/fileSchema"
+                },
+                "select": {
+                  "$ref": "#/definitions/fieldSelection"
+                },
+                "type": {
+                  "const": "FileIngestion"
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "input"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "MessageIngestion"
+                }
+              }
+            },
+            "then": {
+              "additionalProperties": false,
+              "properties": {
+                "eventTime": {
+                  "$ref": "#/definitions/eventTimeFilter"
+                },
+                "input": {
+                  "$ref": "#/definitions/inputTopic"
+                },
+                "name": {
+                  "$ref": "#/definitions/moduleName"
+                },
+                "schema": {
+                  "$ref": "#/definitions/messageSchema"
+                },
+                "select": {
+                  "$ref": "#/definitions/fieldSelection"
+                },
+                "type": {
+                  "const": "MessageIngestion"
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "schema"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "Lookup"
+                }
+              }
+            },
+            "then": {
+              "additionalProperties": false,
+              "properties": {
+                "eventTime": {
+                  "$ref": "#/definitions/eventTimeField"
+                },
+                "expectUniqueMatch": {
+                  "type": "boolean"
+                },
+                "input": {
+                  "$ref": "#/definitions/inputTopic"
+                },
+                "join": {
+                  "$ref": "#/definitions/join"
+                },
+                "lookup": {
+                  "$ref": "#/definitions/lookup"
+                },
+                "name": {
+                  "$ref": "#/definitions/moduleName"
+                },
+                "table": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "Lookup"
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "table",
+                "join",
+                "lookup"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "Logic"
+                }
+              }
+            },
+            "then": {
+              "additionalProperties": false,
+              "properties": {
+                "input": {
+                  "$ref": "#/definitions/inputTopic"
+                },
+                "name": {
+                  "$ref": "#/definitions/moduleName"
+                },
+                "routes": {
+                  "items": {
+                    "pattern": "^(?<stream>(?!error$)[a-z0-9-]{1,30})$",
+                    "type": "string"
+                  },
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "rules": {
+                  "items": {
+                    "pattern": "^.+\\.js$",
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "type": {
+                  "const": "Logic"
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "rules"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "Splitting"
+                }
+              }
+            },
+            "then": {
+              "additionalProperties": false,
+              "properties": {
+                "allowEmpty": {
+                  "type": "boolean"
+                },
+                "arrayPath": {
+                  "$ref": "#/definitions/dataPath"
+                },
+                "input": {
+                  "$ref": "#/definitions/inputTopic"
+                },
+                "name": {
+                  "$ref": "#/definitions/moduleName"
+                },
+                "type": {
+                  "const": "Splitting"
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "arrayPath",
+                "allowEmpty"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "Reporting"
+                }
+              }
+            },
+            "then": {
+              "additionalProperties": false,
+              "properties": {
+                "fields": {
+                  "items": {
+                    "patternProperties": {
+                      ".{1,}": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "minItems": 1,
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                "format": {
+                  "enum": [
+                    "CSV"
+                  ],
+                  "type": "string"
+                },
+                "input": {
+                  "$ref": "#/definitions/inputTopic"
+                },
+                "metadata": {
+                  "patternProperties": {
+                    "^[a-zA-Z0-9_\\- ]{1,}$": {
+                      "pattern": "^[a-zA-Z0-9_\\- ]{1,}$",
+                      "type": "string"
+                    }
+                  },
+                  "propertyNames": {
+                    "pattern": "^[a-zA-Z0-9_\\- ]{1,}$"
+                  },
+                  "type": "object"
+                },
+                "name": {
+                  "$ref": "#/definitions/moduleName"
+                },
+                "notifyADDS": {
+                  "type": "boolean"
+                },
+                "scheduling": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "delayMinutes": {
+                      "min": 0,
+                      "type": "integer"
+                    },
+                    "frequency": {
+                      "enum": [
+                        "daily",
+                        "monthly",
+                        "weekly"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "frequency"
+                  ],
+                  "type": "object"
+                },
+                "subscriber": {
+                  "$ref": "#/definitions/dataPath"
+                },
+                "type": {
+                  "const": "Reporting"
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "scheduling",
+                "format",
+                "fields"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "FunctionalMonitoring"
+                }
+              }
+            },
+            "then": {
+              "additionalProperties": false,
+              "properties": {
+                "hasPII": {
+                  "default": false,
+                  "type": "boolean"
+                },
+                "input": {
+                  "$ref": "#/definitions/inputTopic"
+                },
+                "name": {
+                  "$ref": "#/definitions/moduleName"
+                },
+                "type": {
+                  "const": "FunctionalMonitoring"
+                }
+              },
+              "required": [
+                "name",
+                "type"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "Deduplication"
+                }
+              }
+            },
+            "then": {
+              "additionalProperties": false,
+              "properties": {
+                "afterFirstOccurrence": {
+                  "$ref": "#/definitions/period"
+                },
+                "afterLastOccurrence": {
+                  "$ref": "#/definitions/period"
+                },
+                "input": {
+                  "$ref": "#/definitions/inputTopic"
+                },
+                "key": {
+                  "items": {
+                    "$ref": "#/definitions/dataPath"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "name": {
+                  "$ref": "#/definitions/moduleName"
+                },
+                "type": {
+                  "const": "Deduplication"
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "key"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "Unarchiving"
+                }
+              }
+            },
+            "then": {
+              "additionalProperties": false,
+              "properties": {
+                "archiveTime": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "end": {
+                      "$ref": "#/definitions/dateOrDatetime"
+                    },
+                    "start": {
+                      "$ref": "#/definitions/dateOrDatetime"
+                    }
+                  },
+                  "type": "object"
+                },
+                "input": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "event": {
+                      "pattern": "^(?<event>[a-z0-9-]{1,25})$",
+                      "type": "string"
+                    },
+                    "phase": {
+                      "type": "string"
+                    },
+                    "producer": {
+                      "pattern": "^(?<producer>[a-z0-9-]{1,10})$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "producer",
+                    "event"
+                  ],
+                  "type": "object"
+                },
+                "name": {
+                  "$ref": "#/definitions/moduleName"
+                },
+                "type": {
+                  "const": "Unarchiving"
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "input"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "const": "Aggregation"
+                }
+              }
+            },
+            "then": {
+              "additionalProperties": false,
+              "properties": {
+                "input": {
+                  "$ref": "#/definitions/inputTopic"
+                },
+                "key": {
+                  "$ref": "#/definitions/aggregationKey"
+                },
+                "name": {
+                  "$ref": "#/definitions/moduleName"
+                },
+                "sums": {
+                  "$ref": "#/definitions/sums"
+                },
+                "type": {
+                  "const": "Aggregation"
+                },
+                "window": {
+                  "$ref": "#/definitions/period"
+                }
+              },
+              "required": [
+                "name",
+                "type",
+                "key",
+                "sums",
+                "window"
+              ]
+            }
+          }
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "FileIngestion",
+              "MessageIngestion",
+              "Lookup",
+              "Logic",
+              "Splitting",
+              "Reporting",
+              "FunctionalMonitoring",
+              "Deduplication",
+              "Unarchiving",
+              "Aggregation"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "bmpVersion",
+    "flow",
+    "modules"
+  ],
+  "type": "object"
+}

@@ -1,0 +1,9 @@
+{
+  "playbook_file_path": "../flows/src/aux-nfm/playbook/auxnfm-playbook.yml",
+  "input":[{
+    "path": "../flows/src/aux-nfm/tests/par-run/PPT.NFMAUX.D20240305",
+    "metadata": {"process_date": "2027-03-05T12:00:00Z"}
+  }],
+  "show_bench": true,
+  "ingestion_opts": {}
+}
