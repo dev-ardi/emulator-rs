@@ -3,6 +3,7 @@
 //! This does not spark joy
 
 use std::{
+    process::exit,
     sync::{mpsc, Arc, Once, OnceLock},
     thread::{self, JoinHandle},
 };
@@ -24,24 +25,24 @@ pub struct Interner<'s> {
 
 pub struct TaskData {
     pub idx: usize,
-    pub data: Arc<Message>,
+    pub data: Message,
     pub module: String,
     pub exported_name: String,
     pub tx: mpsc::Sender<RetData>, // ok?
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct RetData {
     pub idx: usize,
-    pub data: Arc<Message>,
+    pub data: Message,
     pub module: String,
 }
 
 pub fn worker_pool(scripts: Vec<String>) -> crossbeam::channel::Sender<TaskData> {
     let (tx, rx) = crossbeam::channel::unbounded();
 
-    // for _ in 0..1 {
-    for _ in 0..num_cpus::get() {
+    for _ in 0..1 {
+        // for _ in 0..num_cpus::get() {
         let scripts = scripts.clone();
         let rx = rx.clone();
         // We detach the thread. It will clean as soon as tx has been dropped
@@ -124,7 +125,10 @@ pub fn handle_message(
 
     let date = data.date.clone();
     // Serialize into js
-    let data = serde_json::to_string(&data.inner).unwrap();
+
+    // PERF: check if I can build the object separately and that improves perf
+    let data = data.inner.to_string();
+    std::fs::write("place", &data);
     let data = v8::String::new(scope, &data).unwrap();
 
     let data = v8::json::parse(scope, data).unwrap();
@@ -136,9 +140,9 @@ pub fn handle_message(
     // Deserialize from js
     let output = v8::json::stringify(scope, data).unwrap();
     let data = output.to_rust_string_lossy(scope);
-    let inner: MessageInner = serde_json::from_str(&data).unwrap();
+    let inner = MessageInner::from_with_bm(&data);
 
-    let data = Message { inner, date }.into();
+    let data = Message { inner, date };
 
     let ret_data = RetData { idx, data, module };
     tx.send(ret_data).unwrap();

@@ -65,13 +65,13 @@ pub async fn entry(opts: Options) {
     let ingestion = ingest.await.unwrap();
     bm.bm("ingestion done");
 
-    std::process::exit(0);
-    loop {}
+    // std::process::exit(0);
+    // loop {}
 
     // Run tree
-    println!("sleeping for 3s");
-    sleep(Duration::from_secs(3));
-    println!("GO!");
+    // println!("sleeping for 3s");
+    // sleep(Duration::from_secs(3));
+    // println!("GO!");
     execute_playbook(tree, ingestion, tx).await;
     bm.bm("exec playbook");
 

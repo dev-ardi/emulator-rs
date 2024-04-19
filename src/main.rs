@@ -14,14 +14,17 @@ use std::{
     time::Instant,
 };
 
-#[cfg(not(target_env = "msvc"))]
-use jemallocator::Jemalloc;
-#[cfg(not(target_env = "msvc"))]
-#[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
+// #[cfg(not(target_env = "msvc"))]
+// use jemallocator::Jemalloc;
+// #[cfg(not(target_env = "msvc"))]
+// #[global_allocator]
+// static GLOBAL: Jemalloc = Jemalloc;
 
 #[tokio::main]
 async fn main() {
+    for i in (0..10).enumerate() {
+        dbg!(i);
+    }
     let time = Instant::now();
 
     let path = args().nth(1).expect("usage: emulator-rs [config]");

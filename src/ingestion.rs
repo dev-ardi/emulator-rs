@@ -25,7 +25,7 @@ use tokio::{
 
 use crate::{
     driver::Benchmarker,
-    opts::{IngestionOpts, Input, Message, MessageInner},
+    opts::{IngestionOpts, Input, Message, MessageInner, Payload},
     playbook::Module,
 };
 
@@ -34,7 +34,7 @@ pub async fn ingest(
     opts: IngestionOpts,
     input: Vec<Input>,
     root: Arc<Path>,
-) -> Vec<Arc<Message>> {
+) -> Vec<Message> {
     let res = input.into_iter().map(
         |Input {
              path: input,
@@ -67,13 +67,13 @@ pub async fn ingest(
                 s.hash(&mut h);
                 let hash = h.finish().to_string();
                 b.bm("hash");
-                let inner: Vec<IObject> =
+                let inner: Vec<Arc<str>> =
                     if let Ok(cached) = tokio::fs::read(cachedir.join(&hash)).await {
-                        let cached = unsafe { String::from_utf8_unchecked(cached) };
                         b.bm("read");
-                        let r = serde_json::from_str(&cached).unwrap();
+                        let cached = unsafe { String::from_utf8_unchecked(cached) };
+                        let cached = cached.lines().map(Into::into).collect();
                         b.bm("deserialize");
-                        r
+                        cached
                     } else {
                         let file = match md {
                             // TODO: Handle non edifact
@@ -93,16 +93,18 @@ pub async fn ingest(
                             dbg!("{res:?}");
                         }
 
-                        let res1 = res.clone();
+                        b.bm("anon");
+                        let res1 = res.join("\n");
+                        b.bm("create output string");
+                        let mut b2 = b.clone();
                         tokio::spawn(async move {
-                            let cache = serde_json::to_vec(&res1).unwrap();
-                            tokio::fs::write(cachedir.join(hash), cache).await.unwrap();
+                            tokio::fs::write(cachedir.join(hash), res1).await.unwrap();
+                            b2.bm("wrote to cache");
                         })
                         .await;
 
                         res
                     };
-                b.bm("load and deserialize");
 
                 let ret = inner
                     .into_iter()
@@ -121,7 +123,6 @@ pub async fn ingest(
     let res = futures::future::join_all(res).await;
 
     let t = Instant::now();
-    // PERF: The serialization as MessageInner could be cached. This could
     let res = res
         .into_par_iter()
         .flatten()
@@ -131,7 +132,7 @@ pub async fn ingest(
                 billingmediation: Default::default(),
             };
 
-            Arc::from(Message { inner, date })
+            Message { inner, date }
         })
         .collect();
     println!("deserialize as Message took {:?}", t.elapsed());
@@ -139,7 +140,7 @@ pub async fn ingest(
 }
 
 const ANON_PATH: &str = "deps/anonymization.jar";
-async fn call_anon(input: &str, grammar: &Path) -> Vec<IObject> {
+async fn call_anon(input: &str, grammar: &Path) -> Vec<Payload> {
     let nul = if cfg!(windows) {
         "NUL"
     } else if cfg!(unix) {
@@ -181,7 +182,7 @@ async fn call_anon(input: &str, grammar: &Path) -> Vec<IObject> {
         .trim_ascii()
         .par_split(|x| *x == b'\n')
         .inspect(|x| assert_ne!(x.trim_ascii(), b"{  }"))
-        .map(serde_json::from_slice)
-        .map(Result::unwrap)
+        // Safety: Edifact is guaranteed to be valid ascii
+        .map(|x| unsafe { std::str::from_utf8_unchecked(x).into() })
         .collect()
 }
