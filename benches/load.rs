@@ -1,5 +1,4 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use emulator_rs::js::init_isolate;
 use emulator_rs::playbook::Playbook;
 use emulator_rs::tree::PbTree;
 
@@ -7,7 +6,7 @@ const PLAYBOOK: &str = include_str!("../playbook1.yaml");
 
 fn pb_tree() -> PbTree {
     let pb = Playbook::new(PLAYBOOK);
-    PbTree::new(&pb.modules)
+    PbTree::new(&pb.pb.modules)
 }
 
 fn load_bench(c: &mut Criterion) {

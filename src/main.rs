@@ -1,17 +1,10 @@
 use emulator_rs::{
     driver,
-    js::init_isolate,
-    opts::{Input, InputMetadata, Options},
-    playbook::Playbook,
-    tree::PbTree,
+    opts::{Options},
 };
-use itertools::Itertools;
-use serde::{Deserialize, Serialize};
 use std::{
-    env::{self, args},
+    env::{args},
     fs::{read_to_string, File},
-    path::PathBuf,
-    time::Instant,
 };
 use tracing::{debug, info, trace};
 use tracing_subscriber::{
@@ -41,7 +34,7 @@ fn tracing() {
         .with(
             stdout_log
                 // Add an `INFO` filter to the stdout logging layer
-                .with_filter(filter::LevelFilter::INFO)
+                .with_filter(filter::LevelFilter::TRACE)
                 // Combine the filtered `stdout_log` layer with the
                 // `debug_log` layer, producing a new `Layered` layer.
                 .and_then(debug_log),

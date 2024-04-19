@@ -78,9 +78,7 @@ fn recurse(
                 // Collect all of the messages from the engines and their routes
                 let mut out = (0..len)
                     .map(|i| {
-                        trace!("waiting for message {i}");
                         let crate::js::RetData { idx, data, .. } = rx.recv().unwrap();
-                        trace!("got message {idx}");
                         let route = data
                             .inner
                             .billingmediation
@@ -104,15 +102,14 @@ fn recurse(
                 });
                 join_all(iter).await;
 
-                // tokio::spawn(async move {
-                //     let data = out.into_iter().map(|x| x.1).collect_vec();
-                //     let data = serde_json::to_vec_pretty(&data).unwrap();
-                //     tokio::fs::write(PathBuf::from("bmp_emulator").join(&name), data)
-                //         .await
-                //         .unwrap();
-                //     println!("successfully wrote results to disk");
-                // })
-                // .await;
+                let save = tokio::spawn(async move {
+                    let data = out.iter().map(|x| x.2.inner.to_string()).join("\n");
+                    trace!("starting save for {name}");
+                    tokio::fs::write(PathBuf::from("bmp_emulator").join(&name), data)
+                        .await
+                        .unwrap();
+                    trace!("finished writing for {name}");
+                });
             }
             Splitting {
                 array_path,
@@ -180,17 +177,15 @@ async fn route_output(
         tokio::spawn(async move { recurse(module.clone(), data, tx, count + 1).await })
     });
 
-    // let data = data.clone();
-    // tokio::spawn(async move {
-    //     let data = serde_json::to_vec_pretty(&data).unwrap();
-    //     tokio::fs::write(PathBuf::from("bmp_emulator").join(name), data)
-    //         .await
-    //         .unwrap();
-    //     println!("successfully wrote results to disk");
-    // })
-    // .await
-    // .unwrap();
-    // println!("finished saving");
+    let data = data.clone();
+    let save = tokio::spawn(async move {
+        let data = data.iter().map(|x| x.inner.to_string()).join("\n");
+        trace!("beginning save for {name}");
+        tokio::fs::write(PathBuf::from("bmp_emulator").join(&name), data)
+            .await
+            .unwrap();
+        trace!("finished writing for {name}");
+    });
 
     join_all(iter).await.into_iter().for_each(|x| x.unwrap());
     trace!("finished recursing");
@@ -200,10 +195,8 @@ async fn route_output(
     // };
     // for i in a {
     //     i.unwrap();
-    //     println!("finished recursing");
     // }
     // b.unwrap();
-    // println!("finished saving");
 }
 
 fn split_billingmediation(

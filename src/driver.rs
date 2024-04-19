@@ -24,15 +24,13 @@ pub struct Benchmarker {
 pub async fn entry(opts: Options) {
     let pb = Playbook::new(opts.playbook_file_path);
 
-    let root: Arc<Path> = pb.channel_root_path.clone().into(); // TODO: I was sleepy or what
+    let root: Arc<Path> = pb.channel_root_path.clone().into();
     let ingestion = pb.pb.modules[0].clone();
     let tree = tree::PbTree::new(&pb.pb.modules);
     // Call ingestion
     let ingest = tokio::spawn(async move {
         ingestion::ingest(&ingestion, opts.ingestion_opts, opts.input, root).await
     });
-
-    // Build execution tree or something ??
 
     // Setup JS isolate pools (in threads/channels?)
     let scripts = pb.get_scripts().await;
@@ -42,7 +40,6 @@ pub async fn entry(opts: Options) {
     debug!("Executing playbook");
     execute_playbook(tree, ingestion, tx).await;
 
-    // Collect results
-
-    // Run assertions
+    // TODO: Collect results
+    // TODO: Run assertions
 }
