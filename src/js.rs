@@ -5,7 +5,8 @@
 use std::{
     process::exit,
     sync::{mpsc, Arc, Once, OnceLock},
-    thread::{self, JoinHandle},
+    thread::{self, sleep, JoinHandle},
+    time::Duration,
 };
 
 use crossbeam::{
@@ -40,6 +41,12 @@ pub struct RetData {
 }
 
 pub fn worker_pool(scripts: Vec<String>) -> crossbeam::channel::Sender<TaskData> {
+    START.call_once(|| {
+        let platform = v8::new_default_platform(0, false).make_shared();
+        v8::V8::initialize_platform(platform);
+        v8::V8::initialize();
+    });
+
     let (tx, rx) = crossbeam::channel::unbounded();
     let threads = num_cpus::get();
     let threads = 16;
@@ -57,12 +64,6 @@ pub fn worker_pool(scripts: Vec<String>) -> crossbeam::channel::Sender<TaskData>
 }
 
 pub fn init_isolate(rx: Receiver<TaskData>, scripts: Vec<String>) {
-    START.call_once(|| {
-        let platform = v8::new_default_platform(0, false).make_shared();
-        v8::V8::initialize_platform(platform);
-        v8::V8::initialize();
-    });
-
     // Init isolate
     let isolate = &mut v8::Isolate::new(Default::default());
     let scope = &mut v8::HandleScope::new(isolate);
@@ -148,9 +149,8 @@ pub fn handle_message(
 
     let data = Message { inner, date };
     let ret_data = RetData { idx, data, module };
-    warn!("pre-send {idx}");
     tx.send(ret_data).unwrap();
-    warn!("send {idx}");
+    // warn!("send {idx}");
 }
 
 pub fn run_script<'s>(
