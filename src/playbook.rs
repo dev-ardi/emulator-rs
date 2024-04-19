@@ -9,6 +9,7 @@ use futures::future::join_all;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tokio::fs::read_to_string;
+use tracing::{instrument, trace};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaybookData {
@@ -28,9 +29,9 @@ impl Playbook {
         let path = &path.as_ref();
         let root = path.parent().unwrap().parent().unwrap().to_owned();
 
-        dbg!(path);
+        trace!("reading playbook from {path:?}");
         let pb = fs::read_to_string(path).unwrap();
-        let pb = serde_yaml::from_str(&pb).unwrap();
+        let pb = serde_yaml::from_str(&pb).unwrap(); // PERF: From reader
         Self {
             pb,
             channel_root_path: root,

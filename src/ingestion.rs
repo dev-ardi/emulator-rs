@@ -22,6 +22,7 @@ use tokio::{
     io::AsyncWriteExt,
     process::Command,
 };
+use tracing::{debug, error, info, instrument, trace, warn};
 
 use crate::{
     driver::Benchmarker,
@@ -29,6 +30,7 @@ use crate::{
     playbook::Module,
 };
 
+#[instrument]
 pub async fn ingest(
     md: &Module,
     opts: IngestionOpts,
@@ -40,39 +42,39 @@ pub async fn ingest(
              path: input,
              metadata,
          }| {
-            let mut b = Benchmarker::new();
-
+            debug!("starting ingestion from {input}");
             let root = root.clone();
             let metadata = metadata.clone();
             let cachedir = PathBuf::from(".cache");
             std::fs::create_dir_all(&cachedir);
             let regex = opts.regex.as_ref().map(|x| Regex::from_str(x).unwrap());
-            b.bm("start");
+            trace!("perf: ingestion start");
             async move {
+                // PERF: it's already valid utf8
                 let res = read_to_string(&input).await.context(input).unwrap();
-                b.bm("load input");
+                trace!("perf: loaded input to string");
                 let mut lines = res
                     .trim()
                     .lines()
                     .skip(opts.head as usize)
                     .filter(|line| regex.as_ref().map(|x| x.is_match(line)).unwrap_or(true))
                     .collect_vec();
-                b.bm("regex");
                 lines.truncate(lines.len() - opts.tail as usize);
                 let s = lines.join("\n");
-
-                // std::fs::write("edifact_rust.edi", s.as_bytes());
+                trace!("perf: Applied ingestion options");
+                debug!("got {} messages", lines.len());
 
                 let mut h = DefaultHasher::default();
                 s.hash(&mut h);
                 let hash = h.finish().to_string();
-                b.bm("hash");
-                let inner: Vec<Arc<str>> =
+                // PERF: this is probably not necessary but why not use file names or something
+                trace!("perf: hash messages");
+                let inner: Vec<Payload> =
                     if let Ok(cached) = tokio::fs::read(cachedir.join(&hash)).await {
-                        b.bm("read");
+                        debug!("reading from cache");
                         let cached = unsafe { String::from_utf8_unchecked(cached) };
-                        let cached = cached.lines().map(Into::into).collect();
-                        b.bm("deserialize");
+                        let cached = cached.lines().map(|x| x.to_owned().into()).collect();
+                        trace!("perf: split into lines ('deserialize')");
                         cached
                     } else {
                         let file = match md {
@@ -83,23 +85,21 @@ pub async fn ingest(
                                 "Expected first module to be MessageIngestion or FileIngestion "
                             ),
                         };
+                        debug!("calling anonymization tool");
                         let res = call_anon(&s, &root.join("grammar").join(file)).await;
+                        debug!("Anonymization tool output {} lines", res.len());
+
                         assert_eq!(
                             res.len(),
                             lines.len(),
                             "Line mismatch: anonymization gave \n{res:?}\n\ninput was \n{lines:?}"
                         );
-                        if (res.len() != lines.len()) {
-                            dbg!("{res:?}");
-                        }
 
-                        b.bm("anon");
-                        let res1 = res.join("\n");
-                        b.bm("create output string");
-                        let mut b2 = b.clone();
+                        let cache = res.iter().join("\n");
+                        trace!("perf: create output string");
                         tokio::spawn(async move {
-                            tokio::fs::write(cachedir.join(hash), res1).await.unwrap();
-                            b2.bm("wrote to cache");
+                            tokio::fs::write(cachedir.join(hash), cache).await.unwrap();
+                            trace!("perf: wrote to cache");
                         })
                         .await;
 
@@ -115,7 +115,7 @@ pub async fn ingest(
                         (inner, date)
                     })
                     .collect_vec();
-                b.bm("attach dates");
+                trace!("perf: attach dates");
                 ret
             }
         },
@@ -124,7 +124,7 @@ pub async fn ingest(
 
     let t = Instant::now();
     let res = res
-        .into_par_iter()
+        .into_iter()
         .flatten()
         .map(|(payload, date)| {
             let inner = MessageInner {
@@ -135,7 +135,8 @@ pub async fn ingest(
             Message { inner, date }
         })
         .collect();
-    println!("deserialize as Message took {:?}", t.elapsed());
+    // PERF: This should be almost instant.
+    trace!("perf: create messages");
     res
 }
 
@@ -149,17 +150,21 @@ async fn call_anon(input: &str, grammar: &Path) -> Vec<Payload> {
         panic!("unsupported system")
     };
 
+    let grammar = grammar.as_os_str().to_string_lossy();
+    let grammar = &grammar;
+    let args = [
+        &format!("-DlogFile={nul}"),
+        "-jar",
+        ANON_PATH,
+        "edidumpjson",
+        "--input-file",
+        "-",
+        "--grammar-file",
+        grammar,
+    ];
+    debug!("{args:?}");
     let mut child = Command::new("java")
-        .args([
-            &format!("-DlogFile={nul}"),
-            "-jar",
-            ANON_PATH,
-            "edidumpjson",
-            "--input-file",
-            "-",
-            "--grammar-file",
-        ])
-        .arg(grammar.as_os_str())
+        .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -174,15 +179,13 @@ async fn call_anon(input: &str, grammar: &Path) -> Vec<Payload> {
         .await
         .unwrap();
 
-    child
-        .wait_with_output()
-        .await
-        .unwrap()
-        .stdout
+    let stdout = child.wait_with_output().await.unwrap().stdout;
+    trace!("Anonymization tool returned {} bytes", stdout.len());
+    stdout
         .trim_ascii()
         .par_split(|x| *x == b'\n')
         .inspect(|x| assert_ne!(x.trim_ascii(), b"{  }"))
         // Safety: Edifact is guaranteed to be valid ascii
-        .map(|x| unsafe { std::str::from_utf8_unchecked(x).into() })
+        .map(|x| unsafe { std::str::from_utf8_unchecked(x).to_owned().into() })
         .collect()
 }

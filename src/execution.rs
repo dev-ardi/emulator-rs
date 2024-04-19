@@ -18,26 +18,31 @@ use rayon::{
     spawn,
 };
 use sonic_rs::OwnedLazyValue;
+use tracing::{debug, error, info, instrument, trace, warn};
 
 use crate::{
     js::TaskData,
-    opts::{Message, MessageInner},
+    opts::{Message, MessageInner, Payload},
     playbook::Module,
     tree::PbTree,
 };
 
 pub async fn execute_playbook(pb_tree: PbTree, ingestion: Vec<Message>, tx: Sender<TaskData>) {
-    println!("EXEC pb");
-    recurse(pb_tree, ingestion, tx).await
+    recurse(pb_tree, ingestion, tx, 0).await
 }
 
+#[instrument(skip(data, tx, children))]
 fn recurse(
     PbTree { module, children }: PbTree,
     data: Vec<Message>,
     tx: Sender<TaskData>,
+    count: usize,
 ) -> BoxFuture<'static, ()> {
     let name = module.name().to_owned();
-    println!("{name}");
+    trace!(flow_name = name);
+    if count > 200 {
+        panic!("hit recursion limit");
+    }
     use crate::playbook::Module::*;
     async move {
         match module {
@@ -47,6 +52,7 @@ fn recurse(
                 name,
                 input,
             } => {
+                debug!("Logic flow {name}");
                 let (return_tx, rx) = mpsc::channel();
                 let len = data.len();
 
@@ -67,14 +73,14 @@ fn recurse(
                     };
                     tx.send(msg).unwrap();
                 }
-                println!("Sent all data");
+                trace!("Sent all data");
 
                 // Collect all of the messages from the engines and their routes
                 let mut out = (0..len)
                     .map(|i| {
-                        println!("listening for msg {i}");
+                        trace!("waiting for message {i}");
                         let crate::js::RetData { idx, data, .. } = rx.recv().unwrap();
-                        println!("got message {idx}");
+                        trace!("got message {idx}");
                         let route = data
                             .inner
                             .billingmediation
@@ -85,7 +91,7 @@ fn recurse(
                     })
                     .collect_vec();
                 out.sort_unstable_by_key(|x| x.0);
-                println!("received all data");
+                trace!("received all data");
 
                 // Route accordingly
                 let iter = children.into_iter().map(|(module, route)| {
@@ -94,7 +100,7 @@ fn recurse(
                         .into_iter()
                         .filter_map(|(_, m_route, data)| (route == *m_route).then_some(data))
                         .collect_vec();
-                    recurse(module, data, tx.clone())
+                    recurse(module, data, tx.clone(), count + 1)
                 });
                 join_all(iter).await;
 
@@ -114,12 +120,14 @@ fn recurse(
                 name,
                 input,
             } => {
+                debug!("Splitting flow {name}");
+
                 let mut path = array_path.split('.').collect_vec();
                 let is_bm = path[0] == "billingmediation";
 
                 let data = data
                     .iter()
-                    .map(|Message { inner, date }| {
+                    .flat_map(|Message { inner, date }| {
                         if is_bm {
                             split_billingmediation(
                                 inner.billingmediation.clone(),
@@ -129,17 +137,16 @@ fn recurse(
                             )
                         } else {
                             split_payload(
-                                &*inner.payload,
+                                inner.payload.clone(),
                                 &path,
                                 inner.billingmediation.clone(),
                                 date.clone(),
                             )
                         }
                     })
-                    .flatten()
                     .collect_vec();
 
-                route_output(&name, children, data, tx).await;
+                route_output(&name, children, data, tx, count).await;
             }
             Lookup { name, input } => todo!(),
             Reporting {
@@ -151,7 +158,8 @@ fn recurse(
             Aggregation { key, name, input } => todo!(),
             Deduplication { key, name, input } => todo!(),
             _ => {
-                route_output(&name, children, data, tx).await;
+                debug!("Ingestion flow {name}");
+                route_output(&name, children, data, tx, count).await;
             }
         }
     }
@@ -163,13 +171,13 @@ async fn route_output(
     children: Vec<(PbTree, String)>,
     data: Vec<Message>,
     tx: Sender<TaskData>,
+    count: usize,
 ) {
-    println!("here");
     let name = name.to_owned();
     let iter = children.into_iter().map(|(module, _)| {
         let data = data.clone();
         let tx = tx.clone();
-        tokio::spawn(async move { recurse(module.clone(), data, tx).await })
+        tokio::spawn(async move { recurse(module.clone(), data, tx, count + 1).await })
     });
 
     // let data = data.clone();
@@ -185,7 +193,7 @@ async fn route_output(
     // println!("finished saving");
 
     join_all(iter).await.into_iter().for_each(|x| x.unwrap());
-    println!("finished recursing");
+    trace!("finished recursing");
     // let (a, b) = tokio::join! {
     //     recursive,
     //     save,
@@ -201,7 +209,7 @@ async fn route_output(
 fn split_billingmediation(
     bm: serde_json::Map<String, serde_json::Value>,
     path: &[&str],
-    payload: Arc<str>,
+    payload: Payload,
     date: IString,
 ) -> Vec<Message> {
     let mut base = bm.clone();
@@ -238,7 +246,7 @@ fn split_billingmediation(
 }
 
 fn split_payload(
-    json: &str,
+    json: Payload,
     path: &[&str],
     bm: serde_json::Map<String, serde_json::Value>,
     date: IString,
@@ -256,14 +264,20 @@ fn split_payload(
         .collect()
 }
 
-fn json_split(json: &str, path: &[&str]) -> Vec<Arc<str>> {
-    let mut local_copy = String::from(json);
-    let arr = sonic_rs::get_from_str(json, path).unwrap();
+fn json_split(json: Payload, path: &[&str]) -> Vec<Payload> {
+    let arr = sonic_rs::get_from_str(&json, path).unwrap();
     let arr = arr.as_raw_str();
 
     let owned_arr: sonic_rs::Array = sonic_rs::from_str(arr).unwrap();
+    if owned_arr.is_empty() {
+        return vec![];
+    }
+    if owned_arr.len() == 1 {
+        return vec![json.clone()];
+    }
 
-    let mut ret: Vec<Arc<str>> = Vec::with_capacity(owned_arr.len());
+    let mut local_copy = String::from(&*json);
+    let mut ret: Vec<Payload> = Vec::with_capacity(owned_arr.len());
 
     for (n, i) in owned_arr.iter().enumerate() {
         unsafe {
@@ -288,7 +302,7 @@ fn json_split(json: &str, path: &[&str]) -> Vec<Arc<str>> {
             ret.push(local_copy.into());
             break; // This appeases the borrowck ;)
         } else {
-            ret.push(Arc::from(&*local_copy));
+            ret.push(Arc::from(local_copy.clone()));
         }
     }
     ret
@@ -301,8 +315,10 @@ mod test {
     fn split_json_nums() {
         let json = r#" {"foo": { "bar": [0,1,2], "unused": null } }"#;
 
-        dbg!(json_split(json, &["foo", "bar"]));
-        for (n, i) in json_split(json, &["foo", "bar"]).iter().enumerate() {
+        for (n, i) in json_split(json.to_owned().into(), &["foo", "bar"])
+            .iter()
+            .enumerate()
+        {
             println!("{n}, {i:?}");
             let json: serde_json::Value = serde_json::from_str(i).unwrap();
             let val = json
@@ -324,8 +340,10 @@ mod test {
     fn split_json_strs() {
         let json = r#" {"foo": { "bar": ["0","1","2"] } }"#;
 
-        dbg!(json_split(json, &["foo", "bar"]));
-        for (n, i) in json_split(json, &["foo", "bar"]).iter().enumerate() {
+        for (n, i) in json_split(json.to_owned().into(), &["foo", "bar"])
+            .iter()
+            .enumerate()
+        {
             let json: serde_json::Value = serde_json::from_str(i).unwrap();
             let val = json
                 .get("foo")
@@ -343,8 +361,10 @@ mod test {
     fn split_json_objs() {
         let json = r#" {"foo": { "bar": [ {"baz": 0}, {"baz": 1}, {"baz": 2} ] } }"#;
 
-        dbg!(json_split(json, &["foo", "bar"]));
-        for (n, i) in json_split(json, &["foo", "bar"]).iter().enumerate() {
+        for (n, i) in json_split(json.to_owned().into(), &["foo", "bar"])
+            .iter()
+            .enumerate()
+        {
             let json: serde_json::Value = serde_json::from_str(i).unwrap();
             let val = json
                 .get("foo")

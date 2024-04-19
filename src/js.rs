@@ -12,6 +12,7 @@ use crossbeam::{
     channel::Receiver,
     deque::{Stealer, Worker},
 };
+use tracing::{debug, instrument, trace, warn};
 use v8::{json, HandleScope, Local, Object, OwnedIsolate, Platform};
 
 use crate::opts::{Message, MessageInner};
@@ -40,9 +41,11 @@ pub struct RetData {
 
 pub fn worker_pool(scripts: Vec<String>) -> crossbeam::channel::Sender<TaskData> {
     let (tx, rx) = crossbeam::channel::unbounded();
+    let threads = num_cpus::get();
+    let threads = 16;
+    debug!("starting {threads} v8 isolates");
 
-    for _ in 0..1 {
-        // for _ in 0..num_cpus::get() {
+    for _ in 0..threads {
         let scripts = scripts.clone();
         let rx = rx.clone();
         // We detach the thread. It will clean as soon as tx has been dropped
@@ -98,6 +101,7 @@ this.bmp = {
         .try_into()
         .unwrap();
 
+    debug!("worker ready to receive messages");
     while let Ok(data) = rx.recv() {
         handle_message(scope, data, modules);
     }
@@ -115,6 +119,7 @@ pub fn handle_message(
     modules: Local<'_, v8::Object>,
 ) {
     let scope = &mut v8::HandleScope::new(scope);
+    let scope = &mut v8::TryCatch::new(scope);
     let process: Local<'_, v8::Function> = run_script(
         scope,
         &format!("global.bmp.modules.{exported_name}.process"),
@@ -128,7 +133,6 @@ pub fn handle_message(
 
     // PERF: check if I can build the object separately and that improves perf
     let data = data.inner.to_string();
-    std::fs::write("place", &data);
     let data = v8::String::new(scope, &data).unwrap();
 
     let data = v8::json::parse(scope, data).unwrap();
@@ -143,9 +147,10 @@ pub fn handle_message(
     let inner = MessageInner::from_with_bm(&data);
 
     let data = Message { inner, date };
-
     let ret_data = RetData { idx, data, module };
+    warn!("pre-send {idx}");
     tx.send(ret_data).unwrap();
+    warn!("send {idx}");
 }
 
 pub fn run_script<'s>(

@@ -5,7 +5,7 @@ use std::{env, fmt::Display, path::PathBuf, sync::Arc};
 
 use itertools::Itertools;
 
-pub type Payload = Arc<str>; // PERF: Experiment with Arc<String>
+pub type Payload = Arc<String>; // PERF: Experiment with Arc<String>
 pub type JsonObj = serde_json::Map<String, serde_json::Value>;
 #[derive(Debug, Clone, Deserialize)]
 pub struct MessageInner {
