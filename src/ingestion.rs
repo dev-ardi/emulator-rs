@@ -184,7 +184,7 @@ async fn call_anon(input: &str, grammar: &Path) -> Vec<Payload> {
     stdout
         .trim_ascii()
         .par_split(|x| *x == b'\n')
-        .inspect(|x| assert_ne!(x.trim_ascii(), b"{  }"))
+        .inspect(|x| assert_ne!(x.trim_ascii(), b"{  }", "Line was empty"))
         // Safety: Edifact is guaranteed to be valid ascii
         .map(|x| unsafe { std::str::from_utf8_unchecked(x).to_owned().into() })
         .collect()

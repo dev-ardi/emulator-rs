@@ -7,7 +7,7 @@ use std::{
 use crossbeam::channel::Sender;
 use eyre::ContextCompat;
 use futures::{
-    future::{join_all, BoxFuture},
+    future::{join, join_all, BoxFuture, JoinAll},
     FutureExt,
 };
 use ijson::IString;
@@ -18,6 +18,7 @@ use rayon::{
     spawn,
 };
 use sonic_rs::OwnedLazyValue;
+use tokio::task::JoinHandle;
 use tracing::{debug, error, info, instrument, trace, warn};
 
 use crate::{
@@ -90,6 +91,7 @@ fn recurse(
                     .collect_vec();
                 out.sort_unstable_by_key(|x| x.0);
                 trace!("received all data");
+                let save = save(name.to_owned(), out.iter().map(|x| x.2.clone()).collect());
 
                 // Route accordingly
                 let iter = children.into_iter().map(|(module, route)| {
@@ -100,16 +102,8 @@ fn recurse(
                         .collect_vec();
                     recurse(module, data, tx.clone(), count + 1)
                 });
-                join_all(iter).await;
-
-                let save = tokio::spawn(async move {
-                    let data = out.iter().map(|x| x.2.inner.to_string()).join("\n");
-                    trace!("starting save for {name}");
-                    tokio::fs::write(PathBuf::from("bmp_emulator").join(&name), data)
-                        .await
-                        .unwrap();
-                    trace!("finished writing for {name}");
-                });
+                let exec = join_all(iter);
+                _ = futures::future::join(exec, save).await;
             }
             Splitting {
                 array_path,
@@ -163,6 +157,15 @@ fn recurse(
     .boxed()
 }
 
+fn save(name: String, data: Vec<Message>) -> JoinHandle<()> {
+    tokio::task::spawn_blocking(move || {
+        let data = data.iter().map(|x| x.inner.to_string()).join("\n");
+        trace!("beginning save for {name}");
+        std::fs::write(PathBuf::from("bmp_emulator").join(&name), data).unwrap();
+        trace!("finished writing for {name}");
+    })
+}
+
 async fn route_output(
     name: &str,
     children: Vec<(PbTree, String)>,
@@ -170,33 +173,20 @@ async fn route_output(
     tx: Sender<TaskData>,
     count: usize,
 ) {
-    let name = name.to_owned();
+    let save = save(name.to_owned(), data.clone());
     let iter = children.into_iter().map(|(module, _)| {
         let data = data.clone();
         let tx = tx.clone();
         tokio::spawn(async move { recurse(module.clone(), data, tx, count + 1).await })
     });
 
-    let data = data.clone();
-    let save = tokio::spawn(async move {
-        let data = data.iter().map(|x| x.inner.to_string()).join("\n");
-        trace!("beginning save for {name}");
-        tokio::fs::write(PathBuf::from("bmp_emulator").join(&name), data)
-            .await
-            .unwrap();
-        trace!("finished writing for {name}");
-    });
-
-    join_all(iter).await.into_iter().for_each(|x| x.unwrap());
+    let recursive = join_all(iter);
     trace!("finished recursing");
-    // let (a, b) = tokio::join! {
-    //     recursive,
-    //     save,
-    // };
-    // for i in a {
-    //     i.unwrap();
-    // }
-    // b.unwrap();
+    let (a, b) = futures::future::join(recursive, save).await;
+    for i in a {
+        i.unwrap();
+    }
+    b.unwrap();
 }
 
 fn split_billingmediation(
@@ -258,7 +248,7 @@ fn split_payload(
 }
 
 fn json_split(json: Payload, path: &[&str]) -> Vec<Payload> {
-    let arr = sonic_rs::get_from_str(&json, path).unwrap();
+    let arr = sonic_rs::get_from_str(&json, path).unwrap_or_else(|e| panic!("{} {}", e, json));
     let arr = arr.as_raw_str();
 
     let owned_arr: sonic_rs::Array = sonic_rs::from_str(arr).unwrap();

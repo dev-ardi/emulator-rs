@@ -49,7 +49,7 @@ pub fn worker_pool(scripts: Vec<String>) -> crossbeam::channel::Sender<TaskData>
 
     let (tx, rx) = crossbeam::channel::unbounded();
     let threads = num_cpus::get();
-    let threads = 16;
+    // let threads = 16;
     debug!("starting {threads} v8 isolates");
 
     for _ in 0..threads {

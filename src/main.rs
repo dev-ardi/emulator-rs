@@ -1,9 +1,6 @@
-use emulator_rs::{
-    driver,
-    opts::{Options},
-};
+use emulator_rs::{driver, opts::Options};
 use std::{
-    env::{args},
+    env::args,
     fs::{read_to_string, File},
 };
 use tracing::{debug, info, trace};
@@ -20,7 +17,6 @@ static GLOBAL: Jemalloc = Jemalloc;
 // https://stackoverflow.com/a/70042590
 fn tracing() {
     let stdout_log = tracing_subscriber::fmt::layer().pretty();
-    // tracing_subscriber::fmt::init();
 
     // A layer that logs events to a file.
     let file = File::create("debug.log");

@@ -22,43 +22,43 @@ impl PbTree {
             children: Self::recurse(&name, mods),
         }
     }
+    // TODO: This is feverish code that I wrote sleep deprived at 4AM
     fn recurse(input_name: &str, mods: &[Module]) -> Vec<(Self, String)> {
-        let mut ret = vec![];
+        let Some(first) = mods.first() else {
+            return vec![];
+        };
 
-        if let Some(n) = mods.first() {
-            match n.input() {
-                Some(s) => {
-                    if let Some((a, b)) = s.split_once('.') {
-                        if a == input_name {
-                            let first = mods[0].clone();
-                            let nodes = Self::recurse(first.name(), &mods[1..]);
-                            ret.push((
-                                Self {
-                                    module: first,
-                                    children: nodes,
-                                },
-                                b.to_owned(),
-                            ));
-                        }
+        let mut ret = vec![];
+        match first.input() {
+            Some(s) => {
+                if let Some((a, b)) = s.split_once('.') {
+                    if a == input_name {
+                        let first = mods[0].clone();
+                        let nodes = Self::recurse(first.name(), &mods[1..]);
+                        ret.push((
+                            Self {
+                                module: first,
+                                children: nodes,
+                            },
+                            b.to_owned(),
+                        ));
                     }
                 }
-                None => {
-                    let first = mods[0].clone();
-                    let nodes = Self::recurse(first.name(), &mods[1..]);
-                    ret.push((
-                        Self {
-                            module: first,
-                            children: nodes,
-                        },
-                        "output".to_owned(),
-                    ));
-                }
             }
-        } else {
-            return ret;
+            None => {
+                let first = mods[0].clone();
+                let nodes = Self::recurse(first.name(), &mods[1..]);
+                ret.push((
+                    Self {
+                        module: first,
+                        children: nodes,
+                    },
+                    "output".to_owned(),
+                ));
+            }
         }
 
-        for i in &mods[2..] {
+        for i in &mods[1..] {
             if let Some((a, b)) = i.name().split_once('.') {
                 if a == input_name {
                     let first = mods[0].clone();
